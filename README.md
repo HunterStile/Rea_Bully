@@ -1,5 +1,7 @@
 # Bully Decompiled — Unreal Reconstruction
 
+[![Featured on Made with REA](https://madewithrea.com/badges/featured.svg)](https://madewithrea.com/builds/bully-scholarship-edition-reconstruction-in-unreal-engine-using-rea-gh)
+
 **Decompilation, reverse engineering and reconstruction of Bully: Scholarship Edition in Unreal Engine 5.8.** Windows-focused, built with AI assistance, and developed against an owner-installed PC copy.
 
 **Status: developer preview.** The local prototype supports exploration of the campus, school hallways and boys' dormitory. The full game, original AI and complete ambient activities are still in development. This public repository contains our code; generated game content and local analysis outputs stay on the owner's machine.
