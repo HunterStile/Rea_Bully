@@ -1,0 +1,16 @@
+name: Public source checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  synthetic-checks:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check publication boundaries
+        run: python -S tools/check_public_tree.py
+      - name: Run synthetic parser and contract tests
+        run: python -S tools/run_public_checks.py
