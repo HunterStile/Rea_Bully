@@ -48,9 +48,10 @@ def verify_release_artifacts(release):
     artifacts = release.get('world_asset_hashes')
     if not isinstance(artifacts, dict) or not artifacts:
         raise RuntimeError('Il rapporto non identifica la mappa integrata verificata.')
+    root = ROOT.resolve()
     for relative, expected in artifacts.items():
-        path = (ROOT/relative).resolve()
-        if not path.is_relative_to(ROOT) or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+        path = (root/relative).resolve()
+        if not path.is_relative_to(root) or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
             raise RuntimeError('Un asset della scena è cambiato dopo il collaudo: ' + relative)
 
 

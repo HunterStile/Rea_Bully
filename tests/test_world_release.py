@@ -11,6 +11,22 @@ import launch_world
 
 
 class VerifiedSceneLaunch(unittest.TestCase):
+    def test_equivalent_workspace_path_is_accepted_but_escape_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base/'workspace'
+            (root/'alias').mkdir(parents=True)
+            runtime = root/'runtime.dll'; runtime.write_bytes(b'compiled-and-tested')
+            scene = root/'scene.umap'; scene.write_bytes(b'integrated-world')
+            outside = base/'outside.umap'; outside.write_bytes(scene.read_bytes())
+            release = {'runtime_sha256': hashlib.sha256(runtime.read_bytes()).hexdigest(),
+                       'world_asset_hashes': {'scene.umap': hashlib.sha256(scene.read_bytes()).hexdigest()}}
+            with patch.object(launch_world, 'ROOT', root/'alias'/'..'), patch.object(launch_world, 'RUNTIME', runtime):
+                launch_world.verify_release_artifacts(release)
+                release['world_asset_hashes'] = {'../outside.umap': hashlib.sha256(outside.read_bytes()).hexdigest()}
+                with self.assertRaises(RuntimeError):
+                    launch_world.verify_release_artifacts(release)
+
     def test_changed_map_or_binary_cannot_launch_as_the_verified_release(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
