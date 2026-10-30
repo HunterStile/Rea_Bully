@@ -60,6 +60,7 @@ public:
     virtual void Tick(float DeltaSeconds) override;
     bool IsReady() const { return bReady; }
     int32 VisibleZones() const;
+    TArray<FName> VisibleZoneNames() const;
     FName GetActiveArea() const { return ActiveArea; }
     UFUNCTION(BlueprintCallable, Category="Recovered world")
     bool RequestTravel(FVector Destination, FName Area);

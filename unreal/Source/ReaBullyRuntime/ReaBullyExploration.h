@@ -69,6 +69,7 @@ class REABULLYRUNTIME_API AReaBullyPlayerController : public APlayerController
 public:
     virtual void BeginPlay() override;
     virtual void SetupInputComponent() override;
+    virtual bool InputKey(const FInputKeyEventArgs& Params) override;
     void ReturnToStart();
 
 private:

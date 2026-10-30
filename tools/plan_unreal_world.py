@@ -8,6 +8,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def zone_area(source):
+    """Keep original area membership; label the supplemental streaming policy."""
+    areas = {item['area'] for item in source.get('classification_sources', []) if item.get('area')}
+    if len(areas) > 1:
+        raise ValueError('Zone has more than one original area: ' + source['name'])
+    if areas:
+        return next(iter(areas)), 'original_ColAreas_membership'
+    if source['name'].startswith('zone_'):
+        return 'MainMap', 'reconstructed_supplemental_zone_streaming_membership'
+    return 'Unresolved_' + source['name'], 'unresolved_original_area'
+
+
 def placement_identity(placement):
     """Exact floats only; q and -q represent the same original rotation."""
     transform = placement['unreal_transform']
@@ -37,19 +49,15 @@ def plan(catalog, imports):
             zone['pending'].append({'source': pending['source'],
                 'model_key': pending['model_key_candidate'], 'reason': pending['reason'],
                 'source_section': 'supplementary_inst'})
-        source_areas = {item['area'] for item in source.get('classification_sources', []) if item.get('area')}
-        if source['name'].startswith('zone_'):
-            source_areas.add('MainMap')
-        if len(source_areas) > 1:
-            raise ValueError('Zone has more than one original area: ' + source['name'])
-        zone['area'] = next(iter(source_areas), 'Unresolved_' + source['name'])
+        zone['area'], zone['area_assignment'] = zone_area(source)
         bounds = source.get('world_bounds_unreal_cm')
         zone['bounds'] = bounds
         for placement in source['placements']:
             key = placement['model_key']
             identity = placement_identity(placement)
-            exterior = source['classification'] == 'outdoor' or source['name'].startswith('zone_')
-            identity = ('MainMap' if exterior else source['name'], *identity)
+            # Outdoor does not mean MainMap: original ftest belongs to Island_3.
+            # Conversely, multiple IPBs (iballtos/ishoot) can share one area.
+            identity = (zone['area'], *identity)
             reference = {'zone': source['name'], 'instance_index': placement['instance_index']}
             if placement.get('source_ipb_record'):
                 reference['source_ipb_record'] = placement['source_ipb_record']
@@ -70,14 +78,15 @@ def plan(catalog, imports):
                 'meshes': [dict(mesh, visual_only=True) for mesh in record['meshes']]
                     if original.get('definition', {}).get('section') == 'item' else record['meshes']})
         zone['exterior'] = source['classification'] == 'outdoor' or source['name'].startswith('zone_')
-        # ftest is an original inactive/test island, not part of the playable mainmap.
-        zone['runtime_enabled'] = zone['exterior'] and source['name'] != 'ftest'
+        # This legacy field selects distance streaming in the builder, not
+        # availability. Keep separate source areas even for outdoor/test IPBs.
+        zone['runtime_enabled'] = zone['exterior']
         zone['always_loaded'] = source['name'] == 'tGlobal'
         zone['source_count'] = source['placement_count'] + len(source.get('supplementary_pending', []))
         zones.append(zone)
     return {'schema_version': 1, 'zones': zones,
         'limitations': ['Distance-based streaming is a reconstruction.',
-                       'Collision uses recovered visible triangles.',
+                       'Default collision uses recovered visible triangles; separately verified COL overlays and original helpers are recorded by the world builder.',
                        'Missing models and original utility entries remain explicit.']}
 
 

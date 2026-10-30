@@ -1,5 +1,8 @@
 """A launcher must open the scene/build that actually passed runtime validation."""
 import hashlib
+from contextlib import redirect_stdout
+import io
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -11,6 +14,52 @@ import launch_world
 
 
 class VerifiedSceneLaunch(unittest.TestCase):
+    def test_v07_missing_release_blocks_before_any_engine_or_process_access(self):
+        self.assertEqual(launch_world.RELEASE, launch_world.ROOT/'evidence/world-release-v07.json')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = {name: root/(name.lower() + '.fixture') for name in ('ENGINE', 'PROJECT', 'RUNTIME', 'WORLD')}
+            for path in paths.values():
+                path.write_bytes(b'temporary launcher fixture')
+            # A previous release must never act as an implicit fallback.
+            (root/'world-release-v06.json').write_text(json.dumps({'passed': True}))
+            paths.update(ROOT=root, RELEASE=root/'world-release-v07.json')
+            with patch.multiple(launch_world, **paths), patch.object(sys, 'argv', ['launch_world.py', '--check']), \
+                    patch.object(launch_world, 'project_processes') as processes, \
+                    patch.object(launch_world, 'verify_release_artifacts') as verify, \
+                    patch.object(launch_world.subprocess, 'Popen') as start:
+                with self.assertRaisesRegex(RuntimeError, 'world-release-v07.json'):
+                    launch_world.main()
+                verify.assert_not_called()
+                processes.assert_not_called()
+                start.assert_not_called()
+
+    def test_check_uses_release_renderer_and_never_starts_unreal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = {name: root/(name.lower() + '.fixture') for name in ('ENGINE', 'PROJECT', 'RUNTIME', 'WORLD')}
+            for path in paths.values():
+                path.write_bytes(b'temporary verified launcher fixture')
+            profile = ['sg.ShadowQuality 2', 'r.SkylightIntensityMultiplier 2']
+            release = {'passed': True, 'renderer_commands': profile,
+                       'runtime_sha256': hashlib.sha256(paths['RUNTIME'].read_bytes()).hexdigest(),
+                       'world_asset_hashes': {paths['WORLD'].name: hashlib.sha256(paths['WORLD'].read_bytes()).hexdigest()}}
+            release_path = root/'world-release-v07.json'
+            release_path.write_text(json.dumps(release), encoding='utf-8')
+            paths.update(ROOT=root, RELEASE=release_path)
+            output = io.StringIO()
+            with patch.multiple(launch_world, **paths), patch.object(sys, 'argv', ['launch_world.py', '--check']), \
+                    patch.object(launch_world, 'project_processes', return_value=[]), \
+                    patch.object(launch_world.subprocess, 'Popen') as start, redirect_stdout(output):
+                self.assertEqual(launch_world.main(), 0)
+                start.assert_not_called()
+            result = json.loads(output.getvalue())
+            self.assertEqual(result['status'], 'launch_configuration_verified')
+            self.assertEqual(result['release'], str(release_path))
+            self.assertEqual(result['renderer_commands'], profile + ['t.MaxFPS 60'])
+            self.assertIn('-ExecCmds=' + ','.join(profile + ['t.MaxFPS 60']), result['command'])
+            self.assertIn('/Game/Maps/WorldExploration', result['command'])
+
     def test_equivalent_workspace_path_is_accepted_but_escape_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)

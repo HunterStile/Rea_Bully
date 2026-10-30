@@ -37,6 +37,18 @@ def main():
     report = Path(os.environ['BULLY_UE_REPORT'])
     if report.exists():
         raise ValueError('New diagnostic report required')
+    asset_path = os.environ.get('REA_COLLISION_DIAGNOSTIC_ASSET')
+    if asset_path:
+        mesh = unreal.load_asset(asset_path)
+        if not isinstance(mesh, unreal.StaticMesh):
+            raise RuntimeError('A saved collision StaticMesh is required')
+        geometry = json.loads(unreal.ReaBullyWorldPropTools.read_collision_triangle_geometry(mesh))
+        with report.open('x', encoding='utf-8') as stream:
+            json.dump({'status': 'editor_query_diagnostic', 'asset_geometry': geometry,
+                'render_triangles': mesh.get_num_triangles(0),
+                'source_glb_sha256': unreal.EditorAssetLibrary.get_metadata_tag(mesh, 'REAOriginalCollisionGLBSHA256'),
+                'asset_or_world_saved': False, 'gameplay_executed': False}, stream, indent=2)
+        return
     level = os.environ.get('REA_COLLISION_DIAGNOSTIC_MAP')
     if level and not unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).load_level(level):
         raise RuntimeError('Could not load requested diagnostic zone')

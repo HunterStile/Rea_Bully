@@ -9,7 +9,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from plan_unreal_world import placement_identity
+from plan_unreal_world import placement_identity, zone_area
 
 ROOT = Path(__file__).resolve().parents[1]
 AMBIENT_LOOPS = {
@@ -44,7 +44,7 @@ def plan(world, props, imports):
     for zone in ordered:
         row = {'name': zone['name'], 'source_ipb_sha256': zone['source_ipb_sha256'],
                'placements': [], 'pending': [], 'duplicates': []}
-        exterior = zone['classification'] == 'outdoor' or zone['name'].startswith('zone_')
+        row['area'], row['area_assignment'] = zone_area(zone)
         for placement in zone['placements']:
             key = placement['model_key']
             if key not in models:
@@ -53,7 +53,7 @@ def plan(world, props, imports):
             model = models[key]
             source = {'zone': zone['name'], 'instance_index': placement['instance_index'],
                       'source_ipb_sha256': zone['source_ipb_sha256']}
-            identity = ('MainMap' if exterior else zone['name'], *placement_identity(placement))
+            identity = (row['area'], *placement_identity(placement))
             if identity in seen:
                 row['duplicates'].append({'source': source, 'owner': seen[identity], 'model_key': key})
                 continue

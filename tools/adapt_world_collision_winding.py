@@ -83,6 +83,12 @@ def engine_proof():
     return rows
 
 
+def same_original_body(previous, current):
+    """An expanded export may relocate identical GLBs, never change their bytes or COL metadata."""
+    return ({k: v for k, v in previous.items() if k != 'output'} ==
+            {k: v for k, v in current.items() if k != 'output'})
+
+
 def adapt(catalog_path, keys, output, report, reuse_path=None):
     lower_priority()
     output = bounded_new(output, ROOT/'local/converted')
@@ -107,8 +113,7 @@ def adapt(catalog_path, keys, output, report, reuse_path=None):
     for original in models:
         if original['model_key'] in reused:
             previous = reused[original['model_key']]
-            require(previous['winding_adapter']['original_model'] == original
-                    and previous['winding_adapter']['source_export'] == reference(catalog_path),
+            require(same_original_body(previous['winding_adapter']['original_model'], original),
                     'Prior adapter references a different original source model')
             read_source(previous)
             results.append(copy.deepcopy(previous))
@@ -130,7 +135,7 @@ def adapt(catalog_path, keys, output, report, reuse_path=None):
               'status': 'engine_winding_adapter_exported_runtime_pending',
               'engine_target': 'ue_winding_adapter_v06',
               'sources': {**catalog['sources'], 'original_export': reference(catalog_path)},
-              'models': results, 'pending': [],
+              'models': results, 'pending': copy.deepcopy(catalog.get('pending', [])),
               'summary': {'models': len(results), 'reused_models': len(reused),
                           'triangles': sum(m['triangles'] for m in results)},
               'limitations': ['Isolated winding experiment; no UE import or runtime validation executed.',
@@ -139,6 +144,13 @@ def adapt(catalog_path, keys, output, report, reuse_path=None):
                   'Original source GLBs, original export report and original asset namespace remain unchanged.']}
     if reuse_path:
         result['sources']['reused_adapter_report'] = reference(reuse_path)
+        # Retain each already imported GLB and its immutable source chain.
+        # read_source above verifies the old export and original model bytes.
+        result['sources']['reused_original_exports'] = []
+        for previous in reused.values():
+            source = previous['winding_adapter']['source_export']
+            if source not in result['sources']['reused_original_exports']:
+                result['sources']['reused_original_exports'].append(source)
     with report.open('x', encoding='utf-8') as stream:
         json.dump(result, stream, indent=2)
     return result

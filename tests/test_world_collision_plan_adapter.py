@@ -68,6 +68,16 @@ class CollisionAdapterPlan(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'provenance'):
             plan(*args)
 
+    def test_expansion_preserves_declared_prior_export_provenance(self):
+        args = self.fixture()
+        sources = args[2]['sources']
+        previous = sources['original_export']
+        sources['original_export'] = {'path': 'expanded.json', 'sha256': 'expanded'}
+        with self.assertRaisesRegex(ValueError, 'provenance'):
+            plan(*args)
+        sources['reused_original_exports'] = [previous]
+        self.assertEqual(len(plan(*args)['zones'][0]['placements']), 1)
+
     def test_correct_adapter_cannot_use_the_original_asset_namespace(self):
         args = self.fixture()
         record = args[3]['05140_fgrd_sc1b11']

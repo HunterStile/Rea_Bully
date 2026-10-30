@@ -27,7 +27,8 @@ def adapter_namespace(model, collisions, record):
             and model.get('status') == 'engine_winding_adapter_exported_runtime_pending'
             and adapter.get('policy') == 'ue58_chaos_swap_second_third_v06'
             and adapter.get('index_mapping') == [0, 2, 1]
-            and adapter.get('source_export') == collisions['sources'].get('original_export')
+            and adapter.get('source_export') in [collisions['sources'].get('original_export'),
+                *collisions['sources'].get('reused_original_exports', [])]
             and record.get('winding_adapter') == adapter,
             'Collision winding adapter provenance differs')
     original = adapter['original_model']
@@ -74,6 +75,7 @@ def plan(world, static_catalog, collisions, imports, winding_validation=None):
     verify_winding_experiment(collisions, imports, winding_validation)
     pending_models = {m['model_key']: m for m in collisions['pending']}
     original_zones = {z['name']: z for z in static_catalog['zones']}
+    verified_triangle_adaptations = set()
     zones = []
     for zone in world['zones']:
         original = original_zones[zone['name']]
@@ -113,6 +115,10 @@ def plan(world, static_catalog, collisions, imports, winding_validation=None):
                 and record['triangles'] == model['triangles'], 'Collision import provenance or body policy differs: ' + key)
             prefix = adapter_namespace(model, collisions, record)
             require(record['mesh'].startswith(prefix + key + '/'), 'Collision asset outside own model folder')
+            if key not in verified_triangle_adaptations:
+                from unreal_import_world_collisions import verify_engine_triangle_adaptation
+                verify_engine_triangle_adaptation(model, record)
+                verified_triangle_adaptations.add(key)
             planned = {**base, 'transform': placement['transform'], 'mesh': record['mesh'],
                 'source_glb_sha256': model['output_sha256'], 'source_col': model['source_col'],
                 'source_model_sha256': model['source_collision']['sha256'],
@@ -122,6 +128,9 @@ def plan(world, static_catalog, collisions, imports, winding_validation=None):
                 adapter = model['winding_adapter']
                 planned['winding_adapter'] = {field: adapter[field] for field in ('policy', 'index_mapping', 'source_glb', 'source_export')}
                 planned['status'] = 'ready_for_adapted_collision_full_scene_test'
+            if record.get('engine_triangle_adaptation'):
+                from unreal_import_world_collisions import triangle_adaptation_summary
+                planned['engine_triangle_adaptation'] = triangle_adaptation_summary(record['engine_triangle_adaptation'])
             row['placements'].append(planned)
         zones.append(row)
     return {'schema': 'rea-bully-world-collision-plan-v1', 'zones': zones,

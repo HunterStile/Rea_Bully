@@ -12,7 +12,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT/'unreal/ReaBully.uproject'
 ENGINE = Path('C:/Program Files/Epic Games/UE_5.8/Engine/Binaries/Win64/UnrealEditor.exe')
-RELEASE = ROOT/'evidence/world-release-v06.json'
+RELEASE = ROOT/'evidence/world-release-v07.json'
 RUNTIME = ROOT/'unreal/Binaries/Win64/UnrealEditor-ReaBullyRuntime.dll'
 WORLD = ROOT/'unreal/Content/Maps/WorldExploration.umap'
 CVAR = re.compile(r'([A-Za-z][A-Za-z0-9_.]*)\s+(?:[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)\Z')

@@ -242,9 +242,17 @@ def travel_yaw(native_heading_radians):
 def assign_zone(obj, world_zones, area_name):
     candidates = [z for z in world_zones if z['area'] == area_name and z.get('bounds')]
     if area_name != 'MainMap':
-        if len(candidates) > 1:
-            raise ValueError('Ambiguous interior door area ownership')
-        return candidates[0]['name'] if candidates else None
+        if len(candidates) <= 1:
+            return candidates[0]['name'] if candidates else None
+        # Several original IPBs can belong to the same area (Midway). This
+        # chooses only a streaming owner; it never changes the source DAT pose.
+        position = obj['pose']['position_unreal_cm']
+        contained = [z for z in candidates if all(
+            z['bounds']['min'][i] <= position[i] <= z['bounds']['max'][i] for i in range(3))]
+        if not contained:
+            return None
+        return min(contained, key=lambda z: (
+            math.prod(z['bounds']['max'][i]-z['bounds']['min'][i] for i in range(3)), z['name']))['name']
     position = obj['pose']['position_unreal_cm']
     # Ownership only controls streaming. This is explicitly a reconstructed
     # partition; the DAT area/pose/model identity does not depend on this choice.
@@ -330,7 +338,7 @@ def plan(doors, model_catalog, imports, world_plan, links, area_catalog):
                 'collision': 'closed_imported_mesh_bounds_box_disabled_while_moving_or_occupied',
                 'lock': 'exploration_unlocked_source_raw_retained_saved_and_script_state_not_recovered',
                 'activation': 'nonmission_DAT_area_gating_chapter_and_daily_schedule_not_recovered',
-                'streaming_owner': 'smallest_containing_mainmap_zone_AABB_or_exact_interior_area'},
+                'streaming_owner': 'smallest_containing_mainmap_zone_XY_AABB_or_exact_area_then_smallest_containing_XYZ_AABB'},
             visual_validation='pending_engine_pose_review')
         zones[zone]['placements'].append(placement)
     used = [z for z in zones.values() if z['placements']]

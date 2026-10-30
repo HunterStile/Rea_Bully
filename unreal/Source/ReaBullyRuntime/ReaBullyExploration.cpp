@@ -3,6 +3,11 @@
 #include "ReaBullyAnimInstance.h"
 #include "ReaBullyWorld.h"
 #include "ReaBullyWorldProbe.h"
+#include "ReaBullyWorldTourProbe.h"
+#include "ReaBullyAreaNavigation.h"
+#include "ReaBullyPropInteractionProbe.h"
+#include "ReaBullyPropGestureProbe.h"
+#include "ReaBullyNavigationProbe.h"
 #include "Animation/AnimSingleNodeInstance.h"
 #include "Animation/BlendSpace1D.h"
 #include "Camera/CameraComponent.h"
@@ -170,6 +175,13 @@ void AReaBullyPlayerController::SetupInputComponent()
     InputComponent->BindAction(TEXT("ExitExploration"), IE_Pressed, this, &AReaBullyPlayerController::ExitExploration);
 }
 
+bool AReaBullyPlayerController::InputKey(const FInputKeyEventArgs& Params)
+{
+    for (TActorIterator<AReaBullyAreaNavigation> It(GetWorld()); It; ++It)
+        if (It->HandleInput(Params)) return true;
+    return Super::InputKey(Params);
+}
+
 void AReaBullyPlayerController::ReturnToStart()
 {
     APawn* PreviousPawn = GetPawn();
@@ -200,23 +212,34 @@ void AReaBullyExplorationHUD::DrawHUD()
     for (TActorIterator<AReaBullyWorldDirector> It(GetWorld()); It; ++It) { Director = *It; break; }
     DrawText(Director ? TEXT("BULLWORTH") : TEXT("BULLWORTH / SCUOLA"), FLinearColor::White,
         Margin, Margin, GEngine->GetMediumFont(), Scale);
-    const TCHAR* AreaTitle = TEXT("Esplorazione");
+    AReaBullyAreaNavigation* Navigation = nullptr;
+    for (TActorIterator<AReaBullyAreaNavigation> It(GetWorld()); It; ++It) { Navigation = *It; break; }
+    FString AreaTitle = TEXT("Esplorazione");
     if (Director)
     {
         if (Director->GetActiveArea() == TEXT("MainMap")) AreaTitle = TEXT("Campus - esplorazione");
         else if (Director->GetActiveArea() == TEXT("School_Hallways")) AreaTitle = TEXT("Scuola - corridoi");
         else if (Director->GetActiveArea() == TEXT("Boys_Dorm")) AreaTitle = TEXT("Dormitorio");
+        if (Navigation)
+        {
+            const FString Label = Navigation->AreaLabel(Director->GetActiveArea());
+            if (!Label.IsEmpty()) AreaTitle = Label;
+        }
     }
     DrawText(AreaTitle, FLinearColor(0.7f, 0.77f, 0.8f), Margin, Margin + 26.0f * Scale, GEngine->GetSmallFont(), Scale);
-    DrawRect(FLinearColor(0.02f, 0.025f, 0.03f, 0.7f), Margin - 10.0f, Canvas->SizeY - 56.0f * Scale, 1050.0f * Scale, 36.0f * Scale);
-    DrawText(TEXT("WASD  muoviti    Mouse  guarda    E  porte    Spazio  salta    Shift  corri    V  visuale    R  ritorna    Esc  esci"),
+    DrawRect(FLinearColor(0.02f, 0.025f, 0.03f, 0.7f), Margin - 10.0f, Canvas->SizeY - 56.0f * Scale, 1150.0f * Scale, 36.0f * Scale);
+    DrawText(TEXT("WASD  muoviti    Mouse  guarda    E  porte    F  garage    Spazio  salta    Shift  corri    V  visuale    R  ritorna    Esc  esci"),
              FLinearColor::White, Margin, Canvas->SizeY - 49.0f * Scale, GEngine->GetSmallFont(), Scale);
+    if (Navigation && Navigation->IsAvailable())
+        DrawText(TEXT("Tab  esplora le aree"), FLinearColor::White, Margin,
+            Canvas->SizeY - 82.0f * Scale, GEngine->GetSmallFont(), Scale);
     if (Director && !Director->IsReady())
     {
         DrawRect(FLinearColor(0.02f, 0.025f, 0.03f, .85f), 0, Canvas->SizeY * .42f, Canvas->SizeX, 70.0f * Scale);
         DrawText(TEXT("Caricamento dell'area..."), FLinearColor::White, Canvas->SizeX * .38f,
             Canvas->SizeY * .44f, GEngine->GetMediumFont(), Scale);
     }
+    if (Navigation) Navigation->DrawMenu(this, Canvas);
 }
 
 AReaBullyGameMode::AReaBullyGameMode()
@@ -229,12 +252,40 @@ AReaBullyGameMode::AReaBullyGameMode()
 void AReaBullyGameMode::StartPlay()
 {
     Super::StartPlay();
+    GetWorld()->SpawnActor<AReaBullyAreaNavigation>();
 #if !UE_BUILD_SHIPPING
     FString Report;
     if (FParse::Value(FCommandLine::Get(), TEXT("ReaBullyWorldReport="), Report))
     {
-        AReaBullyWorldProbe* Probe = GetWorld()->SpawnActor<AReaBullyWorldProbe>();
-        Probe->ReportPath = Report;
+        FString Tour, InteractionPlan, GesturePlan;
+        if (FParse::Param(FCommandLine::Get(), TEXT("ReaBullyNavigationProbe")))
+        {
+            auto* Probe = GetWorld()->SpawnActor<AReaBullyNavigationProbe>();
+            Probe->ReportPath = Report;
+        }
+        else if (FParse::Value(FCommandLine::Get(), TEXT("ReaBullyGestureProbe="), GesturePlan))
+        {
+            auto* Probe = GetWorld()->SpawnActor<AReaBullyPropGestureProbe>();
+            Probe->ReportPath = Report;
+            Probe->PlanPath = GesturePlan;
+        }
+        else if (FParse::Value(FCommandLine::Get(), TEXT("ReaBullyInteractionProbe="), InteractionPlan))
+        {
+            auto* Probe = GetWorld()->SpawnActor<AReaBullyPropInteractionProbe>();
+            Probe->ReportPath = Report;
+            Probe->PlanPath = InteractionPlan;
+        }
+        else if (FParse::Value(FCommandLine::Get(), TEXT("ReaBullyWorldTour="), Tour))
+        {
+            auto* Probe = GetWorld()->SpawnActor<AReaBullyWorldTourProbe>();
+            Probe->ReportPath = Report;
+            Probe->PlanPath = Tour;
+        }
+        else
+        {
+            auto* Probe = GetWorld()->SpawnActor<AReaBullyWorldProbe>();
+            Probe->ReportPath = Report;
+        }
     }
     if (FParse::Value(FCommandLine::Get(), TEXT("ReaBullySmokeReport="), Report))
     {

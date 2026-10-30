@@ -62,8 +62,11 @@ void AReaBullyAmbientPed::Tick(float DeltaSeconds)
             if (!It->IsReady()) return;
         FHitResult Floor;
         FCollisionQueryParams Params(SCENE_QUERY_STAT(AmbientOriginalFloor), false, this);
-        if (!GetWorld()->LineTraceSingleByChannel(Floor, GetActorLocation() + FVector(0, 0, 300),
-            GetActorLocation() - FVector(0, 0, 400), ECC_Visibility, Params) || Floor.ImpactNormal.Z < .7f) return;
+        // Reconstructed vertical grounding of the original placement. Starting
+        // near its feet avoids selecting roofs above the original POI.
+        const FVector SourceFeet = GetActorLocation() - FVector(0, 0, Data->HalfHeight + 2.0f);
+        if (!GetWorld()->LineTraceSingleByChannel(Floor, SourceFeet + FVector(0, 0, 40),
+            SourceFeet - FVector(0, 0, 400), ECC_Visibility, Params) || Floor.ImpactNormal.Z < .7f) return;
         SetActorLocation(Floor.ImpactPoint + FVector(0, 0, Data->HalfHeight + 2.0f));
         SetActorHiddenInGame(false);
         GetCharacterMovement()->SetMovementMode(MOVE_Walking);

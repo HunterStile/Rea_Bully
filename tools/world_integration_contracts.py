@@ -4,6 +4,9 @@
 def require_ambient_npcs(ambient_plan, imported):
     if not imported or imported.get('status') != 'npc_assets_verified':
         raise ValueError('Ambient placement requires a verified NPC import report')
+    expected_manifest = ambient_plan.get('sources', {}).get('npc_manifest')
+    if expected_manifest and imported.get('source_manifest') != expected_manifest:
+        raise ValueError('Ambient placement and NPC import reference different source manifests')
     npcs = {npc['ped_id']: npc for npc in imported['npcs']}
     if len(npcs) != len(imported['npcs']):
         raise ValueError('Duplicate imported NPC identity')

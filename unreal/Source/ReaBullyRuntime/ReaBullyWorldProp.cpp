@@ -1,5 +1,7 @@
 #include "ReaBullyWorldProp.h"
+#include "ReaBullyWorld.h"
 #include "Animation/AnimSequence.h"
+#include "Animation/AnimSingleNodeInstance.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
@@ -10,9 +12,38 @@
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "Engine/Level.h"
+#include "Engine/World.h"
+#include "EngineUtils.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
+#include "InputCoreTypes.h"
+#include "Kismet/GameplayStatics.h"
 
 namespace
 {
+TWeakObjectPtr<APlayerController> LastPropInputController;
+uint64 LastPropInputFrame = MAX_uint64;
+
+bool HasApprovedInteraction(const UReaBullyWorldPropData* Prop, const UReaBullyPropInteractionData* Action,
+    const FString& SourceId)
+{
+    // These DAT triggers explicitly instantiate BikeGar and are called by the
+    // global main script. SBikeGar and unrelated IPB copies are not this action.
+    if (!Prop || !Prop->Mesh || !Action || Prop->AmbientLoop ||
+        Prop->ModelKey != TEXT("10121_bikegar") || Action->ModelKey != Prop->ModelKey ||
+        Action->SourceSHA256 != Prop->SourceSHA256 || Action->EvidenceSHA256.Len() != 64 ||
+        (SourceId != TEXT("tbusines_doors.dat:23") && SourceId != TEXT("tBMX.dat:23")) ||
+        Action->ClosedOriginal != TEXT("BIKEGAR\\IDLE") || Action->OpenOriginal != TEXT("BIKEGAR\\OPEN") ||
+        Action->CloseOriginal != TEXT("BIKEGAR\\CLOSE") ||
+        Action->ClosedPoseCenterCm.ContainsNaN() || Action->ClosedPoseExtentCm.ContainsNaN() ||
+        Action->ClosedPoseExtentCm.GetMin() <= 0.0f) return false;
+    for (const UAnimSequence* Clip : {Action->ClosedClip.Get(), Action->OpenClip.Get(), Action->CloseClip.Get()})
+        if (!Clip || Clip->GetSkeleton() != Prop->Mesh->GetSkeleton() ||
+            !FMath::IsFinite(Clip->GetPlayLength()) || Clip->GetPlayLength() <= 0.0f) return false;
+    return true;
+}
+
 bool HasApprovedAmbientPolicy(const UReaBullyWorldPropData* Data)
 {
     if (!Data->AmbientLoop) return Data->AmbientLoopOriginal.IsEmpty();
@@ -24,11 +55,36 @@ bool HasApprovedAmbientPolicy(const UReaBullyWorldPropData* Data)
         return Data->AmbientLoopOriginal == TEXT("CARNI01\\CARNY_IDLE");
     return false;
 }
+
+bool HasApprovedGesture(const UReaBullyWorldPropData* Prop, const UReaBullyPropGestureData* Gesture,
+    const FString& SourceId)
+{
+    if (!Prop || !Prop->Mesh || !Gesture || Gesture->ModelKey != Prop->ModelKey ||
+        Gesture->SourceSHA256 != Prop->SourceSHA256 || Gesture->EvidenceSHA256.Len() != 64 ||
+        Prop->AmbientLoop != Gesture->IdleClip || Gesture->IdleOriginal != TEXT("CARNI01\\CARNY_IDLE") ||
+        Gesture->GestureOriginal != TEXT("CARNI01\\CARNY_CMERE") ||
+        Gesture->IdlePoseCenterCm.ContainsNaN() || Gesture->IdlePoseExtentCm.ContainsNaN() ||
+        Gesture->IdlePoseExtentCm.GetMin() <= 0.0f) return false;
+    // Exact original IPB instances; the activation is a reconstructed manual control.
+    const bool ApprovedSource =
+        (Prop->ModelKey == TEXT("10220_carni01") &&
+            (SourceId == TEXT("ipb:zone_carn1:26") || SourceId == TEXT("ipb:zone_carn1:36"))) ||
+        (Prop->ModelKey == TEXT("10222_carni02") && SourceId == TEXT("ipb:zone_carn1:27")) ||
+        (Prop->ModelKey == TEXT("10223_carni03") &&
+            (SourceId == TEXT("ipb:zone_carn1:28") || SourceId == TEXT("ipb:zone_carn1:29") ||
+             SourceId == TEXT("ipb:zone_carn1:30")));
+    if (!ApprovedSource) return false;
+    for (const UAnimSequence* Clip : {Gesture->IdleClip.Get(), Gesture->GestureClip.Get()})
+        if (!Clip || Clip->GetSkeleton() != Prop->Mesh->GetSkeleton() ||
+            !FMath::IsFinite(Clip->GetPlayLength()) || Clip->GetPlayLength() <= 0.0f) return false;
+    return true;
+}
 }
 
 AReaBullyWorldProp::AReaBullyWorldProp()
 {
-    PrimaryActorTick.bCanEverTick = false;
+    PrimaryActorTick.bCanEverTick = true;
+    PrimaryActorTick.bStartWithTickEnabled = false;
     MeshComponent = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("OriginalObjectSkin"));
     RootComponent = MeshComponent;
     MeshComponent->SetMobility(EComponentMobility::Movable);
@@ -38,8 +94,17 @@ AReaBullyWorldProp::AReaBullyWorldProp()
 
 bool AReaBullyWorldProp::ConfigureRecoveredProp(UReaBullyWorldPropData* Source)
 {
+    bInteractionConfigured = bInteractionMoving = bInteractionOpen = bInteractionTargetOpen = false;
+    InteractionClip = nullptr;
+    InteractionCount = 0;
+    CompletedGestureCount = 0;
+    LastGestureEndpointSeconds = 0.0f;
+    SetActorTickEnabled(false);
     if (!Source || !Source->Mesh || !Source->Mesh->GetSkeleton() ||
-        Source->SourceSHA256.Len() != 64 || !HasApprovedAmbientPolicy(Source))
+        Source->SourceSHA256.Len() != 64 || !HasApprovedAmbientPolicy(Source) ||
+        (InteractionData && GestureData) ||
+        (InteractionData && !HasApprovedInteraction(Source, InteractionData, InteractionSourceId)) ||
+        (GestureData && !HasApprovedGesture(Source, GestureData, InteractionSourceId)))
     {
         SetActorHiddenInGame(true);
         return false;
@@ -54,6 +119,19 @@ bool AReaBullyWorldProp::ConfigureRecoveredProp(UReaBullyWorldPropData* Source)
     if (Data->AmbientLoop) MeshComponent->Play(true);
     else MeshComponent->Stop();
     MeshComponent->RefreshBoneTransforms();
+    if (InteractionData)
+    {
+        MeshComponent->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+        bInteractionConfigured = true;
+        SetInteractionPose(InteractionData->ClosedClip, 0.0f);
+        SetActorTickEnabled(true);
+    }
+    else if (GestureData)
+    {
+        MeshComponent->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+        bInteractionConfigured = true;
+        SetActorTickEnabled(true);
+    }
     SetActorHiddenInGame(false);
     return true;
 }
@@ -69,6 +147,116 @@ void AReaBullyWorldProp::BeginPlay()
     Super::BeginPlay();
     if (!ConfigureRecoveredProp(Data))
         UE_LOG(LogTemp, Error, TEXT("Original prop has missing assets or unapproved playback policy: %s"), *GetName());
+}
+
+void AReaBullyWorldProp::SetInteractionPose(UAnimSequence* Clip, float Seconds)
+{
+    if (InteractionClip != Clip)
+    {
+        InteractionClip = Clip;
+        MeshComponent->SetAnimation(Clip);
+        if (auto* Instance = MeshComponent->GetSingleNodeInstance()) Instance->SetLooping(false);
+    }
+    MeshComponent->SetPosition(Seconds, false);
+    MeshComponent->Stop();
+    MeshComponent->TickAnimation(0.0f, false);
+    MeshComponent->RefreshBoneTransforms();
+}
+
+bool AReaBullyWorldProp::IsWorldReadyForInteraction() const
+{
+    if (!GetWorld()) return false;
+    for (TActorIterator<AReaBullyWorldDirector> It(GetWorld()); It; ++It)
+        if (!It->IsReady()) return false;
+    return true;
+}
+
+bool AReaBullyWorldProp::RequestInteractionToggle()
+{
+    if (!bInteractionConfigured || !bExplorationInteractionEnabled || bInteractionMoving ||
+        IsHidden() || !GetLevel() || !GetLevel()->bIsVisible || !IsWorldReadyForInteraction()) return false;
+    bInteractionTargetOpen = !bInteractionOpen;
+    bInteractionMoving = true;
+    InteractionSeconds = 0.0f;
+    SetInteractionPose(GestureData ? GestureData->GestureClip.Get() :
+        (bInteractionTargetOpen ? InteractionData->OpenClip.Get() : InteractionData->CloseClip.Get()), 0.0f);
+    ++InteractionCount;
+    return true;
+}
+
+FVector AReaBullyWorldProp::GetInteractionWorldLocation() const
+{
+    if (GestureData) return GetActorTransform().TransformPosition(GestureData->IdlePoseCenterCm);
+    return InteractionData ? GetActorTransform().TransformPosition(InteractionData->ClosedPoseCenterCm) : GetActorLocation();
+}
+
+float AReaBullyWorldProp::InteractionDistanceSquared(FVector Position) const
+{
+    if (!InteractionData && !GestureData) return MAX_flt;
+    // One distance and nearest-input rule shared by garages and carnival gestures.
+    const FVector Center = GestureData ? GestureData->IdlePoseCenterCm : InteractionData->ClosedPoseCenterCm;
+    const FVector Extent = GestureData ? GestureData->IdlePoseExtentCm : InteractionData->ClosedPoseExtentCm;
+    const FBox Box(Center - Extent, Center + Extent);
+    const FVector Closest = Box.GetClosestPointTo(GetActorTransform().InverseTransformPosition(Position));
+    return FVector::DistSquared(Position, GetActorTransform().TransformPosition(Closest));
+}
+
+bool AReaBullyWorldProp::IsNearestInteraction(APlayerController* Controller) const
+{
+    APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
+    if (!Pawn || !bInteractionConfigured || !bExplorationInteractionEnabled || IsHidden() ||
+        !GetLevel() || !GetLevel()->bIsVisible || !IsWorldReadyForInteraction()) return false;
+    const FVector Position = Pawn->GetActorLocation();
+    const float Distance = InteractionDistanceSquared(Position);
+    if (Distance > FMath::Square(InteractionDistanceCm)) return false;
+    for (TActorIterator<AReaBullyWorldProp> It(GetWorld()); It; ++It)
+    {
+        const AReaBullyWorldProp* Other = *It;
+        if (Other == this || !Other->bInteractionConfigured || !Other->bExplorationInteractionEnabled ||
+            Other->IsHidden() || !Other->GetLevel() || !Other->GetLevel()->bIsVisible) continue;
+        const float OtherDistance = Other->InteractionDistanceSquared(Position);
+        if (OtherDistance > FMath::Square(Other->InteractionDistanceCm)) continue;
+        if (OtherDistance < Distance - 0.01f ||
+            (FMath::Abs(OtherDistance - Distance) <= 0.01f && Other->InteractionSourceId < InteractionSourceId)) return false;
+    }
+    return true;
+}
+
+void AReaBullyWorldProp::Tick(float DeltaSeconds)
+{
+    Super::Tick(DeltaSeconds);
+    if (!bInteractionConfigured) return;
+    if (bInteractionMoving && FMath::IsFinite(DeltaSeconds) && DeltaSeconds > 0.0f)
+    {
+        const float End = InteractionClip->GetPlayLength();
+        InteractionSeconds = FMath::Min(InteractionSeconds + DeltaSeconds, End);
+        SetInteractionPose(InteractionClip, InteractionSeconds);
+        if (InteractionSeconds >= End)
+        {
+            bInteractionMoving = false;
+            if (GestureData)
+            {
+                LastGestureEndpointSeconds = InteractionSeconds;
+                ++CompletedGestureCount;
+                bInteractionOpen = bInteractionTargetOpen = false;
+                InteractionClip = nullptr;
+                MeshComponent->SetAnimation(GestureData->IdleClip);
+                MeshComponent->SetPosition(0.0f, false);
+                MeshComponent->Play(true);
+                MeshComponent->TickAnimation(0.0f, false);
+                MeshComponent->RefreshBoneTransforms();
+            }
+            else bInteractionOpen = bInteractionTargetOpen;
+        }
+    }
+    APlayerController* Controller = UGameplayStatics::GetPlayerController(this, 0);
+    if (Controller && !Controller->IsMoveInputIgnored() && Controller->WasInputKeyJustPressed(EKeys::F) &&
+        !(LastPropInputController == Controller && LastPropInputFrame == GFrameCounter) && IsNearestInteraction(Controller))
+    {
+        LastPropInputController = Controller;
+        LastPropInputFrame = GFrameCounter;
+        RequestInteractionToggle();
+    }
 }
 
 TArray<FString> UReaBullyWorldPropTools::GetMeshBoneNames(USkeletalMesh* Mesh)
@@ -87,6 +275,38 @@ TArray<int32> UReaBullyWorldPropTools::GetMeshBoneParents(USkeletalMesh* Mesh)
         for (const FMeshBoneInfo& Bone : Mesh->GetRefSkeleton().GetRawRefBoneInfo())
             Parents.Add(Bone.ParentIndex);
     return Parents;
+}
+
+FString UReaBullyWorldPropTools::ReadCollisionTriangleGeometry(UStaticMesh* Mesh)
+{
+    auto Result = MakeShared<FJsonObject>();
+    FTriMeshCollisionData Data;
+    const bool Valid = Mesh && Mesh->GetPhysicsTriMeshData(&Data, true);
+    Result->SetBoolField(TEXT("available"), Valid);
+    Result->SetStringField(TEXT("mesh"), GetPathNameSafe(Mesh));
+    Result->SetBoolField(TEXT("flip_normals"), Data.bFlipNormals);
+    TArray<TSharedPtr<FJsonValue>> Positions, Triangles;
+    if (Valid)
+    {
+        for (const auto& Vertex : Data.Vertices)
+        {
+            TArray<TSharedPtr<FJsonValue>> XYZ;
+            for (double Value : {static_cast<double>(Vertex.X), static_cast<double>(Vertex.Y), static_cast<double>(Vertex.Z)})
+                XYZ.Add(MakeShared<FJsonValueNumber>(Value));
+            Positions.Add(MakeShared<FJsonValueArray>(XYZ));
+        }
+        for (const auto& Face : Data.Indices)
+        {
+            TArray<TSharedPtr<FJsonValue>> Indices;
+            for (int32 Index : {Face.v0, Face.v1, Face.v2}) Indices.Add(MakeShared<FJsonValueNumber>(Index));
+            Triangles.Add(MakeShared<FJsonValueArray>(Indices));
+        }
+    }
+    Result->SetArrayField(TEXT("positions_cm"), Positions);
+    Result->SetArrayField(TEXT("triangles"), Triangles);
+    FString Json;
+    FJsonSerializer::Serialize(Result, TJsonWriterFactory<>::Create(&Json));
+    return Json;
 }
 
 FString UReaBullyWorldPropTools::InspectCollisionMesh(UStaticMesh* Mesh)

@@ -2,7 +2,7 @@
 
 **Decompilation, reverse engineering and reconstruction of Bully: Scholarship Edition in Unreal Engine 5.8.** Windows-focused, built with AI assistance, and developed against an owner-installed PC copy.
 
-**Status: developer preview.** The local prototype supports exploration of the campus, school hallways and boys' dormitory. The full game, original AI and complete ambient activities are still in development. This public repository contains our code; generated game content and local analysis outputs stay on the owner's machine.
+**Status: v07 developer preview, locally verified and recorded on 30 October 2026.** The local prototype now assembles 85 source zones covering 47 areas, with 31 placed NPCs, selected original animations and manual exploration interactions. The full game, original AI and complete ambient activities remain in development. This repository contains our code; generated game content and local analysis outputs stay on the owner's machine.
 
 ## What “decompiled” means here
 
@@ -10,32 +10,37 @@ The research pipeline examines the original executable with REA/Ghidra, disassem
 
 ## Current local milestone
 
-The published source snapshot corresponds to the locally tested v06 milestone of 26 October 2026:
+The v07 development milestone of 30 October 2026 separates saved content, runtime checks and visual acceptance:
 
 | Area | Locally verified scope |
 |---|---|
-| Exploration | Four streamed source levels: `tGlobal`, `tschool`, `ischool`, `isc_dorm` |
-| Player | Jimmy's recovered skin and animations; walking, running, jumping and camera controls |
-| Ambient characters | Seven distinct NPCs with their own skins and clips |
-| Scene content | 537 static placements, 111 skinned props currently in bind pose, 62 door placements |
-| Collision | 63 placed COL3 bodies from 35 models, plus explicitly retained mesh fallback |
-| Audio | 207 imported samples; selected footsteps and Birds ambience connected to the runtime |
-| Runtime checks | Keyboard movement, source geometry floor contact, door animation, school/dormitory entry and return |
+| World assembly | 85 saved source zones spanning 47 areas; 6,984 visible static placements from the recovered placement plan |
+| Traversal | All 85 sampled source checkpoints passed streaming, floor-contact and short keyboard-walk checks |
+| Player | Jimmy's recovered skin and clips with reconstructed walking, running, jumping and camera control |
+| Ambient characters | 31 distinct NPCs imported and placed; all 31 IDs observed in passive tour samples, without complete behavior certification |
+| Scene objects | 533 skinned prop placements, 160 door placements and 1,132 original collision instances including one separately verified helper |
+| Garages | Both original placements passed real F-input open/close and endpoint checks; the exploration control is reconstructed |
+| Carnival gestures | Six original placements passed manual one-shot gestures and return to original idle; no autonomous scheduler claim |
+| Area menu | 47 entries derived from source checkpoints; actual keyboard focus/cancel and two selected-area arrivals verified |
+| Audio | 207 imported samples; selected footsteps and Birds ambience verified in the integrated rendered probe |
+| Python regression suite | 350 local checks passed without failures, errors or skips; tool/test hashes stayed unchanged during the run |
 
-The local milestone passed 214 Python tests and a rendered runtime check. Those asset-dependent checks require the owner's generated evidence and content; they are not reproduced merely by cloning this repository. [Verification scope](docs/VERIFICATION.md).
+The final nine-image GPU tour and integrated audio/rendered probe passed under the same recorded preview profile. All nine tour images were inspected and accepted for a developer preview: the earlier shadow warning is absent and interior readability has improved. Foliage cards, hard shadows and some apparently mirrored signs remain visible limitations; the cause of the sign orientation has not been established. Lighting is an adaptation, not a faithful recreation of the original area lighting. These sampled views do not verify every scene or all 31 NPC appearances. [Detailed verification scope](docs/VERIFICATION.md).
+
+These asset-dependent results require the owner's generated evidence and content. Cloning the source repository alone does not reproduce them. Missions, combat, vehicles, saves, complete original AI and full ambient activities remain incomplete.
 
 ## Where we intend to distinguish the project
 
-1. **Windows setup that people can actually reproduce.** The developer machine runs the prototype on Windows; a clean-clone reconstruction workflow remains a delivery target.
-2. **A broader explorable world.** All 85 recovered source zones are catalogued locally. Import and traversal testing beyond the four-level milestone are in progress.
-3. **Ambient life with measured fidelity.** Character-specific animation, original placement and collision evidence, followed by visible activities and interactions. Reconstructed behavior is labelled explicitly.
-4. **Demonstrations that can be checked.** Same-location footage, measured routes and published limitations rather than claims of a finished game or guaranteed performance.
+1. **Reproducible Windows setup.** The prototype runs locally on Windows; a complete clean-clone reconstruction workflow remains a delivery target.
+2. **World coverage backed by source evidence.** All 85 recovered source zones are assembled and sampled across 47 areas. Exhaustive traversal and complete original activities remain separate work.
+3. **Ambient life with measured fidelity.** Character-specific clips, original placements and collision evidence, followed by visible interactions. Reconstructed behavior is labelled explicitly.
+4. **Demonstrations that can be checked.** Same-location footage, measured routes and published limitations, without a finished-game or guaranteed-performance claim.
 
-Unreal itself is already used by other projects. We do not claim this prototype is more complete or visually superior to them. [Comparison with existing projects](docs/PROJECT_COMPARISON.md) · [Roadmap](docs/ROADMAP.md).
+Unreal is already used by other projects. We do not claim this prototype is more complete or visually superior to them. [Project comparison, researched 28 October 2026](docs/PROJECT_COMPARISON.md) · [Roadmap](docs/ROADMAP.md).
 
 ## Getting started
 
-The archive inspection tools can be used from a clean clone with Python 3.12 and your own installed PC copy:
+Use Python 3.12 and your own installed PC copy for archive inspection:
 
 ```powershell
 git clone https://github.com/HunterStile/Rea_Bully.git
@@ -46,20 +51,16 @@ python tools/bully_archives.py inventory "$env:BULLY_INSTALL" --output evidence/
 python tools/bully_archives.py extract "$env:BULLY_INSTALL/Stream/World.dir" --indexed --output local/my-world-extraction
 ```
 
-For source-only checks, run `python tools/run_public_checks.py`.
+For synthetic source-only checks, run `python tools/run_public_checks.py`. This suite passed 165 checks without reading the owner's generated assets; its scope and count are separate from the 350 local asset-dependent checks.
 
-Running the Unreal prototype additionally requires Unreal Engine 5.8.3, a compatible Windows C++ toolchain, locally reconstructed assets, generated maps and provenance reports. The current build/import scripts still expect development-workspace staging files and fixed engine locations. **A fully automated setup and a downloadable playable build are not available yet.** See [setup status](docs/SETUP.md) before attempting to launch the project.
+Running the Unreal prototype additionally requires Unreal Engine 5.8.3, a compatible Windows C++ toolchain, locally reconstructed assets, generated maps and provenance reports. The scripts still expect development-workspace staging files and fixed engine locations. **A fully automated setup and a downloadable playable build are not available yet.** Read [setup status](docs/SETUP.md) before attempting to launch.
 
-## Contributing
+## Contributing and license
 
-Useful contributions include reproducible Windows setup, original-format parsers, animation/physics fidelity, ambient activities and focused regression checks. Describe the source evidence, the behavior changed and the verification performed. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Useful contributions include Windows setup, original-format parsers, animation/physics fidelity, ambient activities and focused regression checks. Describe the source evidence, behavior changed and validation performed. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Do not commit game files, extracted assets, decompiled game scripts, executable pseudocode dumps, generated Unreal content, credentials or personal logs. Contributors obtain required game data from their own installation.
-
-## Credits and license
 
 Original project code is [MIT licensed](LICENSE). Bully and its proprietary content belong to their respective rights holders and are not included in or licensed by this repository. This is an unofficial project, not affiliated with Rockstar Games or Take-Two Interactive.
 
 Research references include [REA](https://github.com/morluto/rea), [LiquidSnake0/bully-re](https://github.com/LiquidSnake0/bully-re), [Lua 5.0](https://www.lua.org/source/5.0/) and [unluac](https://sourceforge.net/projects/unluac/). External tools are obtained separately under their own licenses. We also compare progress with [oh-ashen-one/bully-remake](https://github.com/oh-ashen-one/bully-remake).
-
-Development is AI-assisted. Source recovery, local validation and unfinished behavior are described separately so that readers can assess the actual state of the project.

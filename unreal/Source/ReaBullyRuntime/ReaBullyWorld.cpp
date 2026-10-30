@@ -121,6 +121,16 @@ int32 AReaBullyWorldDirector::VisibleZones() const
     return Count;
 }
 
+TArray<FName> AReaBullyWorldDirector::VisibleZoneNames() const
+{
+    TArray<FName> Names;
+    if (!Data) return Names;
+    for (int32 Index = 0; Index < Streams.Num(); ++Index)
+        if (Streams[Index] && Streams[Index]->IsLevelVisible() && Data->Zones.IsValidIndex(Index))
+            Names.Add(Data->Zones[Index].Name);
+    return Names;
+}
+
 void AReaBullyWorldDirector::UpdateStreaming()
 {
     if (!Data) return;
@@ -159,6 +169,9 @@ void AReaBullyWorldDirector::UpdateStreaming()
         {
             Streams[Index]->SetShouldBeVisible(false);
             Streams[Index]->SetShouldBeLoaded(false);
+            // Original areas can overlap in coordinates. Do not find an arrival
+            // floor in the outgoing area while its level is still visible.
+            RequiredVisible &= !Streams[Index]->IsLevelVisible();
         }
     }
     if (!bReady && Required > 0 && RequiredVisible && Player)

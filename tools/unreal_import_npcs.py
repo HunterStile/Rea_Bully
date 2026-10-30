@@ -63,7 +63,8 @@ def verify_generated_asset(unreal, asset, expected_type, source_sha256):
 def main():
     import unreal
     sys.path.insert(0, str(ROOT/'tools'))
-    from prepare_npc_runtime_manifest import half_height, load_runtime_manifest
+    from prepare_npc_runtime_manifest import half_height
+    from town_npc_manifest import load_runtime_manifest
 
     manifest_path = Path(os.environ.get('BULLY_NPC_MANIFEST', str(ROOT/'evidence/npc-import-manifest-v04.json')))
     if not manifest_path.is_absolute():

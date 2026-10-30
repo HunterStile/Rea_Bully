@@ -21,6 +21,16 @@ class ScenePreflight(unittest.TestCase):
         with self.assertRaises(ValueError):
             require_ambient_npcs({'placements': [{'ped_id': 9}, {'ped_id': 9}]}, imported)
 
+    def test_same_named_cast_from_another_source_manifest_is_rejected(self):
+        reference = {'path': 'manifest.json', 'sha256': 'verified-source'}
+        plan = {'placements': [{'ped_id': 9}], 'sources': {'npc_manifest': reference}}
+        report = {'status': 'npc_assets_verified', 'npcs': [{'ped_id': 9}],
+                  'source_manifest': {**reference, 'sha256': 'different-skin-or-clips'}}
+        with self.assertRaisesRegex(ValueError, 'different source manifests'):
+            require_ambient_npcs(plan, report)
+        report['source_manifest'] = reference
+        self.assertEqual(set(require_ambient_npcs(plan, report)), {9})
+
 
 if __name__ == '__main__':
     unittest.main()

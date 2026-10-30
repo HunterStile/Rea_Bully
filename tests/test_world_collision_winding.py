@@ -7,11 +7,19 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'tools'))
-from adapt_world_collision_winding import split_glb, swap_glb_winding
+from adapt_world_collision_winding import split_glb, swap_glb_winding, same_original_body
 from unreal_import_world_collisions import import_target
 
 
 class WorldCollisionWinding(unittest.TestCase):
+    def test_expanded_export_reuses_only_byte_and_metadata_identical_bodies(self):
+        original = {'output': 'old.glb', 'output_sha256': 'same',
+                    'source_collision': {'sha256': 'col'}, 'triangles': 454}
+        self.assertTrue(same_original_body(original, dict(original, output='new.glb')))
+        for changes in ({'output_sha256': 'different'}, {'triangles': 453},
+                        {'source_collision': {'sha256': 'other'}}):
+            self.assertFalse(same_original_body(original, dict(original, **changes)))
+
     def source(self):
         document = {'asset': {'version': '2.0', 'generator': 'source'},
             'meshes': [{'primitives': [{'attributes': {'POSITION': 0}, 'indices': 1, 'mode': 4}]}],
